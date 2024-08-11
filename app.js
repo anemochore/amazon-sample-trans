@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         amazon sample trans
 // @namespace    http://tampermonkey.net/
-// @version      0.0.1
+// @version      0.0.2
 // @updateURL    https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @downloadURL  https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @description  try to take over the world!
 // @author       anemochore
 // @match        https://read.amazon.com/sample/*
+// @match        https://read.amazon.co.jp/sample/*
 // @grant        GM_getValue
 // @grant        GM_setValue
 // ==/UserScript==
@@ -34,22 +35,67 @@ if(!API_KEY || API_KEY == 'enter your key here!!!') {
   return;
 }
 
-const divs = await elementReady_('div[data-page]', document, {returnAll: true, checkIfAllChildrenAreAdded: true});
-console.log('divsLength', divs.length);
+let SINGLE_PAGE_FLAG = false;
+if(location.host == 'read.amazon.co.jp') SINGLE_PAGE_FLAG = true;
 
-const imgs = await elementReady_('div[data-page]>img', document, {returnAll: true, checkIfAllChildrenAreAdded: true});
-console.log('imgsLength', imgs.length);
+const observer = new MutationObserver(onLoad);
 
-const texts = [], translations = [];
-output.value = '';
-for(img of imgs) {
-  const i = img.parentElement.getAttribute('data-page');
+if(!SINGLE_PAGE_FLAG) {
+  //amazon.com
+  await elementReady_('div[data-page]', document, {returnAll: true, checkIfAllChildrenAreAdded: true});
+  const imgs = await elementReady_('div[data-page]>img', document, {returnAll: true, checkIfAllChildrenAreAdded: true});
 
-  texts[i] = await ocr(img.src) || ' ';
-  if(texts[i]) translations[i] = await translate(texts[i]);
-  output.value = output.value + decodeHtml(translations[i]) + '\n----\n';
+  const texts = [], translations = [];
+  output.value = '';
+  for(const img of imgs) {
+    const i = img.parentElement.getAttribute('data-page');
+
+    texts[i] = await ocr(img.src) || ' ';
+    if(texts[i]) translations[i] = decodeHtml(await translate(texts[i]));
+    output.value = output.value + translations[i] + '\n----\n';
+  }
+
+  return;
+}
+else {
+  texts = {}, translations = {};
+  
+  await onLoad();  //force first run
+  observer.observe(document, {childList: true, subtree: true});
 }
 
+async function onLoad() {
+  const div = await elementReady_('div.kg-full-page-img');
+  const img = await elementReady_('img', div);
+  const b64 = convertImageToBase64(img).replace('data:image/png;base64,', '');
+  const key = img.src.split('/').pop();
+  console.log('key', key);
+
+  if(!texts[key]) {
+    texts[key] = await ocr(b64) || ' ';
+    if(texts[key]) translations[key] = decodeHtml(await translate(texts[key]));
+    output.value = translations[key];
+  }
+  else {
+    output.value = translations[key];
+  }
+}
+  
+
+function convertImageToBase64(image) {
+  // Create a canvas element
+  const canvas = document.createElement('canvas');
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+
+  // Draw the image onto the canvas
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(image, 0, 0);
+
+  // Convert the canvas to a base64-encoded data URL
+  const dataUrl = canvas.toDataURL(); // By default, this is PNG format
+  return dataUrl;
+}
 
 function decodeHtml(html) {
   //https://stackoverflow.com/a/7394787/6153990
@@ -58,9 +104,13 @@ function decodeHtml(html) {
   return txt.value;
 }
 
-async function ocr(imgUrl) {
+async function ocr(imgUrlOrB64) {
   //구글 ocr(월 이미지 1000개 무료)
 
+  let reqImage;
+  if(imgUrlOrB64.startsWith('http')) reqImage = {source: {imageUri: imgUrlOrB64}};
+  else reqImage = {content: imgUrlOrB64};
+  
   let res, data, text;
   try {
     res = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${API_KEY}`, {
@@ -68,7 +118,7 @@ async function ocr(imgUrl) {
       body: JSON.stringify({
         requests: [{
           features: [{type: "TEXT_DETECTION"}],
-          image: {source: {imageUri: imgUrl}},
+          image: reqImage,
         }],
       }),
     });
