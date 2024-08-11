@@ -2,6 +2,8 @@
 // @name         amazon sample trans
 // @namespace    http://tampermonkey.net/
 // @version      0.0.1
+// @updateURL    https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
+// @downloadURL  https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @description  try to take over the world!
 // @author       anemochore
 // @match        https://read.amazon.com/sample/*
