@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         amazon sample trans
 // @namespace    http://tampermonkey.net/
-// @version      0.0.2
+// @version      0.0.3
 // @updateURL    https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @downloadURL  https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @description  try to take over the world!
@@ -39,13 +39,14 @@ let SINGLE_PAGE_FLAG = false;
 if(location.host == 'read.amazon.co.jp') SINGLE_PAGE_FLAG = true;
 
 const observer = new MutationObserver(onLoad);
+let texts, translations;
 
 if(!SINGLE_PAGE_FLAG) {
   //amazon.com
   await elementReady_('div[data-page]', document, {returnAll: true, checkIfAllChildrenAreAdded: true});
   const imgs = await elementReady_('div[data-page]>img', document, {returnAll: true, checkIfAllChildrenAreAdded: true});
 
-  const texts = [], translations = [];
+  texts = [], translations = [];
   output.value = '';
   for(const img of imgs) {
     const i = img.parentElement.getAttribute('data-page');
@@ -69,16 +70,13 @@ async function onLoad() {
   const img = await elementReady_('img', div);
   const b64 = convertImageToBase64(img).replace('data:image/png;base64,', '');
   const key = img.src.split('/').pop();
-  console.log('key', key);
+  //console.log('key', key);
 
   if(!texts[key]) {
     texts[key] = await ocr(b64) || ' ';
     if(texts[key]) translations[key] = decodeHtml(await translate(texts[key]));
-    output.value = translations[key];
   }
-  else {
-    output.value = translations[key];
-  }
+  output.value = translations[key] || ' ';
 }
   
 
