@@ -26,6 +26,7 @@ output.style.backgroundColor = 'lightgray';
 output.style.overflow = 'scroll';
 output.style.zIndex = '9999';
 document.body.append(output);
+output.value = '실행 중...';
 
 if(!API_KEY || API_KEY == 'enter your key here!!!') {
   GM_setValue('GOOGLE_API_KEY', 'enter your key here!!!');
@@ -34,13 +35,12 @@ if(!API_KEY || API_KEY == 'enter your key here!!!') {
 }
 
 const divs = await elementReady_('div[data-page]', document, {returnAll: true, checkIfAllChildrenAreAdded: true});
-const divsLength = divs.length;
-console.log('divsLength', divsLength);
-const texts = [], translations = [];
+console.log('divsLength', divs.length);
 
 const imgs = await elementReady_('div[data-page]>img', document, {returnAll: true, checkIfAllChildrenAreAdded: true});
 console.log('imgsLength', imgs.length);
 
+const texts = [], translations = [];
 output.value = '';
 for(img of imgs) {
   const i = img.parentElement.getAttribute('data-page');
