@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         amazon sample trans
 // @namespace    http://tampermonkey.net/
-// @version      0.0.5
+// @version      0.0.8
 // @updateURL    https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @downloadURL  https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @description  try to take over the world!
@@ -38,44 +38,53 @@ if(!API_KEY || API_KEY == 'enter your key here!!!') {
 let SINGLE_PAGE_FLAG = false;
 if(location.host == 'read.amazon.co.jp') SINGLE_PAGE_FLAG = true;
 
-const observer = new MutationObserver(onLoad);
-let texts, translations;
+let observer, texts, translations;
+let imgsLength;
 
-if(!SINGLE_PAGE_FLAG) {
-  //amazon.com
-  await elementReady_('div[data-page]', document, {returnAll: true, checkIfAllChildrenAreAdded: true});
-  const imgs = await elementReady_('div[data-page]>img', document, {returnAll: true, checkIfAllChildrenAreAdded: true});
-
-  texts = [], translations = [];
-  output.value = '';
-  for(const img of imgs) {
-    const i = img.parentElement.getAttribute('data-page');
-
-    texts[i] = await ocr(img.src) || ' ';
-    if(texts[i]) translations[i] = decodeHtml(await translate(texts[i]));
-    output.value = output.value + translations[i] + '\n----\n';
-  }
-}
-else {
-  texts = {}, translations = {};
-  
-  await onLoad();  //force first run
-  observer.observe(document, {childList: true, subtree: true});
-}
+if(!SINGLE_PAGE_FLAG) texts = [], translations = [];
+else                  texts = {}, translations = {};
+observer = new MutationObserver(onLoad);
+await onLoad();  //force first run
 
 async function onLoad() {
   observer.disconnect();
 
-  const div = await elementReady_('div.kg-full-page-img');
-  const img = await elementReady_('img', div);
-  const b64 = convertImageToBase64(img).replace('data:image/png;base64,', '');
-  const key = img.src.split('/').pop();
+  let keys = [], imgUrlOrB64s;
+  if(!SINGLE_PAGE_FLAG) {
+    await elementReady_('div[data-page]', document, {checkIfAllChildrenAreAdded: true});
+    const imgs = await elementReady_('div[data-page]>img', document, {returnAll: true, checkIfAllChildrenAreAdded: true});
+    //console.log('prev imgs length, imgs length', imgsLength, imgs.length);
 
-  if(!texts[key] && !translations[key]) {
-    texts[key] = await ocr(b64) || ' ';
-    if(texts[key]) translations[key] = decodeHtml(await translate(texts[key]));
+    if(!imgsLength || imgs.length > imgsLength) {
+      keys = imgs.map(el => el.parentElement.getAttribute('data-page'));
+      imgUrlOrB64s = [];
+      keys.forEach((key, i) => {
+        if(texts[key]) keys[i] = null;
+        else imgUrlOrB64s[i] = imgs[i].src;
+      });
+      imgsLength = imgs.length;
+    }
   }
-  output.value = translations[key] || ' ';
+  else {
+    const div = await elementReady_('div.kg-full-page-img');
+    const img = await elementReady_('img', div);
+
+    const key = img.src.split('/').pop();
+    keys = [key];
+    imgUrlOrB64s = {};
+    imgUrlOrB64s[key] = convertImageToBase64(img).replace('data:image/png;base64,', '');
+  }
+
+  for(const key of keys) {
+    if(!texts[key]) texts[key] = await ocr(imgUrlOrB64s[key]) || ' ';
+    if(texts[key] && !translations[key]) translations[key] = decodeHtml(await translate(texts[key]));
+
+    if(!SINGLE_PAGE_FLAG) output.value = translations.filter(el => el).join('\n----\n');
+    else                  output.value = translations[key] || ' ';
+
+    console.log(`page ${key} processed. length: ${translations[key].length}`);
+  }
+
   observer.observe(document, {childList: true, subtree: true});
 }
 
@@ -120,7 +129,7 @@ async function ocr(imgUrlOrB64) {
       }),
     });
     data = await res.json();
-    text = data.responses?.pop().fullTextAnnotation.text?.replaceAll(/Copyrighted Material/g, '').replaceAll(/\n/gm, '<br>');
+    text = data.responses?.pop().fullTextAnnotation.text?.replaceAll(/Copyrighted Material/g, '').replaceAll(/\n/gm, '<br/>');
     //console.log('text:', text);
   }
   catch(e) {
@@ -130,14 +139,14 @@ async function ocr(imgUrlOrB64) {
   return text;
 }
 
-async function translate(text, targetLanguage = 'ko') {
+async function translate(text, target = navigator.language.slice(0, 2)) {
   //구글 번역(월 50만 자 무료)
 
   let res, data, translation;
   try {
-    res = await fetch(`https://translation.googleapis.com/language/translate/v2?key=${API_KEY}&q=${encodeURIComponent(text)}&target=${targetLanguage}`);
+    res = await fetch(`https://translation.googleapis.com/language/translate/v2?key=${API_KEY}&q=${encodeURIComponent(text)}&target=${target}`);
     data = await res.json();
-    translation = data.data?.translations.pop().translatedText.replaceAll(/<br>/g, '\n');
+    translation = data.data?.translations.pop().translatedText.replaceAll(/<br\/>/g, '\n');
     //console.log('translation:', translation);
   }
   catch(e) {
