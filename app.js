@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         amazon sample trans
 // @namespace    http://tampermonkey.net/
-// @version      0.0.4
+// @version      0.0.5
 // @updateURL    https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @downloadURL  https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @description  try to take over the world!
@@ -64,19 +64,20 @@ else {
 }
 
 async function onLoad() {
+  observer.disconnect();
+
   const div = await elementReady_('div.kg-full-page-img');
   const img = await elementReady_('img', div);
   const b64 = convertImageToBase64(img).replace('data:image/png;base64,', '');
   const key = img.src.split('/').pop();
-  //console.log('key', key);
 
-  if(!texts[key]) {
+  if(!texts[key] && !translations[key]) {
     texts[key] = await ocr(b64) || ' ';
     if(texts[key]) translations[key] = decodeHtml(await translate(texts[key]));
   }
   output.value = translations[key] || ' ';
+  observer.observe(document, {childList: true, subtree: true});
 }
-  
 
 function convertImageToBase64(image) {
   // Create a canvas element
@@ -119,11 +120,13 @@ async function ocr(imgUrlOrB64) {
       }),
     });
     data = await res.json();
-    text = data.responses?.pop().fullTextAnnotation.text?.replaceAll(/Copyrighted Material/g, '');
+    text = data.responses?.pop().fullTextAnnotation.text?.replaceAll(/Copyrighted Material/g, '').replaceAll(/\n/gm, '<br>');
+    //console.log('text:', text);
   }
   catch(e) {
     console.log('google ocr failed', e);
   }
+
   return text;
 }
 
@@ -134,11 +137,13 @@ async function translate(text, targetLanguage = 'ko') {
   try {
     res = await fetch(`https://translation.googleapis.com/language/translate/v2?key=${API_KEY}&q=${encodeURIComponent(text)}&target=${targetLanguage}`);
     data = await res.json();
-    translation = data.data?.translations.pop().translatedText;
+    translation = data.data?.translations.pop().translatedText.replaceAll(/<br>/g, '\n');
+    //console.log('translation:', translation);
   }
   catch(e) {
     console.log('google trans failed', e);
   }
+
   return translation;
 }
 
