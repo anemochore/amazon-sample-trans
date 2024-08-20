@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         amazon sample trans
 // @namespace    http://tampermonkey.net/
-// @version      0.1.0
+// @version      0.1.1
 // @updateURL    https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @downloadURL  https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @description  try to take over the world!
@@ -9,6 +9,7 @@
 // @match        https://read.amazon.com/sample/*
 // @match        https://read.amazon.co.jp/sample/*
 // @grant        GM_getValue
+// @grant        GM_setValue
 // @grant        GM_xmlhttpRequest
 // @connect      apigw.ntruss.com
 // @connect      googleapis.com
@@ -147,9 +148,14 @@ translates.deepl = async (text, target = navigator.language.slice(0, 2)) => {
 
 const output = document.createElement('textarea');
 let root, SINGLE_PAGE_FLAG, texts, translations;
+
 let ocrKey, ocrFunc, ocrUrl, transKey, transFunc;
 await init();
-if(!ocrFunc || !transFunc) return;
+if(!ocrFunc || !transFunc) {
+  GM_setValue('사용법', '깃허브 저장소의 리드미를 참고해서 탬퍼멍키 저장소에 본인 크리덴셜을 써둡시다.');
+  output.value = '깃허브 저장소의 리드미를 참고해서 탬퍼멍키 저장소에 본인 크리덴셜을 써둡시다.';
+  return;
+}
 
 let observer, imgsLength;
 observer = new MutationObserver(onLoad);
