@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         amazon sample trans
 // @namespace    http://tampermonkey.net/
-// @version      0.1.5
+// @version      0.1.6
 // @updateURL    https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @downloadURL  https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @description  try to take over the world!
@@ -16,8 +16,8 @@
 // @connect      deepl.com
 // ==/UserScript==
 
-const ocrs = {}, translates = {};
-ocrs.naver = async function(imgUrlOrB64) {
+const ocrs = {}, transFuncs = {};
+ocrs.naver = async imgUrlOrB64 => {
   //네이버 ocr(월 100건(?) 무료)
 
   const reqImage = {name: 'whatever'};
@@ -30,13 +30,11 @@ ocrs.naver = async function(imgUrlOrB64) {
     reqImage.data = imgUrlOrB64;
   };
 
+  const timeStamp = Date.now();
   let res, data, text;
   try {
-    const timeStamp = Date.now();
-    
-    const clovaEndpoint = ocrUrl;
-    res = await fetchCors(clovaEndpoint, {
-    //res = await fetch(clovaEndpoint, {
+    res = await fetchCors(ocrUrl, {
+    //res = await fetch(ocrUrl, {
       method: 'POST',
       headers: {
         'X-OCR-SECRET': ocrKey,
@@ -91,7 +89,7 @@ ocrs.google = async imgUrlOrB64 => {
       }),
     });
     data = await res.json();
-    text = data.responses?.pop().fullTextAnnotation.text?.replaceAll(/Copyrighted Material/g, '').replaceAll(/\n/gm, '<br/>');
+    text = data.responses?.pop().fullTextAnnotation.text;
     console.log('text:', text);
   }
   catch(e) {
@@ -100,15 +98,15 @@ ocrs.google = async imgUrlOrB64 => {
 
   return text;
 };
-translates.google = async (text, target = navigator.language.slice(0, 2)) => {
+transFuncs.google = async (text, target = navigator.language.slice(0, 2)) => {
   //구글 번역(월 50만 자 무료)
 
   let res, data, translation;
   try {
     res = await fetch(`https://translation.googleapis.com/language/translate/v2?key=${ocrKey}&q=${encodeURIComponent(text)}&target=${target}`);
     data = await res.json();
-    translation = data.data?.translations.pop().translatedText.replaceAll(/<br\/>/g, '\n');
-    console.log('translation:', translation);
+    translation = data.data?.translations.pop().translatedText;
+    console.log('translation:', translation.replaceAll(/<br\/>/g, '\n'));
   }
   catch(e) {
     console.log('google trans failed', e);
@@ -116,7 +114,7 @@ translates.google = async (text, target = navigator.language.slice(0, 2)) => {
 
   return translation;
 };
-translates.deepl = async (text, target = navigator.language.slice(0, 2)) => {
+transFuncs.deepl = async (text, target = navigator.language.slice(0, 2)) => {
   //딥엘 무료 번역(월 50만 자 무료)
 
   let res, data, translation;
@@ -133,8 +131,8 @@ translates.deepl = async (text, target = navigator.language.slice(0, 2)) => {
       }),
     });
     data = res.response;
-    translation = data?.translations.pop().text.replaceAll(/<br\/>/g, '\n');
-    console.log('translation:', translation);
+    translation = data?.translations.pop().text;
+    console.log('translation:', translation.replaceAll(/<br\/>/g, '\n'));
   }
   catch(e) {
     console.log('deepl trans failed', e);
@@ -168,7 +166,7 @@ async function init() {
   output.style.width = '674px';
   output.style.height = '85.5%';
   output.style.position = 'absolute';
-  output.style.fontSize = '2em';
+  output.style.fontSize = '1.8em';
   output.style.lineHeight = '1.5em';
   output.style.backgroundColor = 'lightgray';
   output.style.overflow = 'scroll';
@@ -200,10 +198,10 @@ async function init() {
 
   //번역: google, deepl 순서
   transKey = GM_getValue('GOOGLE_TRANS_API_KEY') || GM_getValue('GOOGLE_API_KEY');
-  if(transKey) transFunc = translates.google;
+  if(transKey) transFunc = transFuncs.google;
   else {
     transKey = GM_getValue('DEEPL_API_KEY');
-    if(transKey) transFunc = translates.deepl;
+    if(transKey) transFunc = transFuncs.deepl;
     else {
       output.value = '탬퍼멍키 저장소에 본인 구글 번역 API 키(GOOGLE_TRANS_API_KEY)를 쓰든가 딥엘 API 키(DEEPL_API_KEY)를 써야 합니다.';
       return;
@@ -212,7 +210,8 @@ async function init() {
 
   //entry
   root = await elementReady_('div#kr-renderer');
-  SINGLE_PAGE_FLAG = root.querySelector('div[data-page]') ? false : true;
+  SINGLE_PAGE_FLAG = (await elementReady_('div.litb-reading-area', document, {resolveWhenClassChanges: true})).classList.contains('paginated');
+  console.log('root, SINGLE_PAGE_FLAG', root, SINGLE_PAGE_FLAG);
 
   if(SINGLE_PAGE_FLAG) {
     texts = {}, translations = {};
@@ -225,7 +224,7 @@ async function init() {
 async function onLoad() {
   observer.disconnect();
 
-  const keys = [], imgUrlOrB64s = {};
+  let keys = [], imgUrlOrB64s = {};
   if(!SINGLE_PAGE_FLAG) {
     await elementReady_('div[data-page]', document, {checkIfAllChildrenAreAdded: true});
     const imgs = await elementReady_('div[data-page]>img', document, {returnAll: true, checkIfAllChildrenAreAdded: true});
@@ -247,19 +246,32 @@ async function onLoad() {
 
     keys[0] = key;
     imgUrlOrB64s[key] = convertImageToBase64(img).replace('data:image/png;base64,', '');
+
+    output.value = '실행 중...';
   }
 
-  let prevOutput = output.value;
   for(const key of keys) {
     if(!texts[key]) {
-      output.value = '실행 중...';
-      texts[key] = await ocrFunc(imgUrlOrB64s[key]) || ' ';
+      texts[key] = (await ocrFunc(imgUrlOrB64s[key]) || ' ')
+      .replaceAll(/Copyrighted Material/g, '')
+      .replaceAll(/\n/gm, '<br/>');
     }
-    if(texts[key] && !translations[key]) translations[key] = decodeHtml(await transFunc(texts[key]));
-    else output.value = prevOutput;
+    else if(SINGLE_PAGE_FLAG) {
+      output.value = texts[key] || ' ';
+      output.style.backgroundColor = 'darkgreen';
+    }
 
-    if(!SINGLE_PAGE_FLAG) output.value = translations.filter(el => el).join('\n----\n');
-    else                  output.value = translations[key] || ' ';
+    if(texts[key] && !translations[key]) {
+      translations[key] = decodeHtml((await transFunc(texts[key]) || '').replaceAll(/<br\/>/g, '\n'));
+    }
+
+    if(!SINGLE_PAGE_FLAG) {
+      output.value = translations.filter(el => el).join('\n----\n');
+    }
+    else {
+      output.value = translations[key] || output.value;
+      output.style.backgroundColor = 'lightgray';
+    }
 
     console.log(`page ${key} processed. translation length: ${translations[key]?.length}`);
   }
@@ -315,32 +327,39 @@ function sleep(ms) {
 
 function elementReady_(selector, baseEl = document.documentElement, options = {}) {
   return new Promise((resolve, reject) => {
-    let els = [...baseEl.querySelectorAll(selector)];
-    if(els.length > 0 && !options.waitFirst) {
-      if(options.returnAll) resolve(els);
-      else resolve(els[els.length-1]);
+    const els = [...baseEl.querySelectorAll(selector)];
+    if(els.length > 0 && !options.waitFirst && !options.resolveWhenClassChanges) {
+      console.debug('resolved immediately', els);
+      if(options.returnAll) resolve(els); else resolve(els[els.length-1]);
     }
 
     this.prevElNumber = els.length;
-    console.debug('this.prevElNumber, els.length:', selector, this.prevElNumber, els.length);
+    this.prevClassName = els[0]?.className;
+    console.debug(`for '${selector}' class and length: '${this.prevClassName}', ${this.prevElNumber}`);
 
     new MutationObserver(async (mutationRecords, observer) => {
-      let els = [...baseEl.querySelectorAll(selector)];
+      const els = [...baseEl.querySelectorAll(selector)];
+
+      if(!options.checkIfAllChildrenAreAdded && !options.resolveWhenClassChanges && els.length > 0) {
+        console.debug('resolved for checkIfAllChildrenAreAdded false & resolveWhenClassChanges false', els);
+        observer.disconnect();
+        if(options.returnAll) resolve(els); else resolve(els[els.length-1]);
+      }
+
       if(els.length > 0) {
-        if(!options.checkIfAllChildrenAreAdded) {
-          console.debug('resolved for checkIfAllChildrenAreAdded false', els);
+        if(options.resolveWhenClassChanges && els[0].className != this.prevClassName) {
+          console.debug('resolved for resolveWhenClassChanges true', els[0]);
           observer.disconnect();
-          if(options.returnAll) resolve(els);
-          else resolve(els[els.length-1]);
+          if(options.returnAll) resolve(els); else resolve(els[els.length-1]);
         }
-        else if(els.length > this.prevElNumber) {
+
+        if(options.checkIfAllChildrenAreAdded && els.length > this.prevElNumber) {
           this.prevElNumber = els.length;
           await sleep(1000);  //dirty hack
           if([...baseEl.querySelectorAll(selector)].length == this.prevElNumber) {
-            console.debug('resolved for checkIfAllChildrenAreAdded true', els);
+            console.debug('resolved for checkIfAllChildrenAreAdded true & resolveWhenClassChanges false', els);
             observer.disconnect();
-            if(options.returnAll) resolve(els);
-            else resolve(els[els.length-1]);
+            if(options.returnAll) resolve(els); else resolve(els[els.length-1]);
           }
         }
       }
