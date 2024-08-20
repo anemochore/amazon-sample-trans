@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         amazon sample trans
 // @namespace    http://tampermonkey.net/
-// @version      0.1.2
+// @version      0.1.3
 // @updateURL    https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @downloadURL  https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @description  try to take over the world!
@@ -120,7 +120,7 @@ translates.deepl = async (text, target = navigator.language.slice(0, 2)) => {
   //딥엘 무료 번역(월 50만 자 무료)
 
   let res, data, translation;
-  //try {
+  try {
     res = await fetchCors(`https://api-free.deepl.com/v2/translate`, {
       method: 'POST',
       headers: {
