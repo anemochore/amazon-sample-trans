@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         amazon sample trans
 // @namespace    http://tampermonkey.net/
-// @version      0.1.3
+// @version      0.1.4
 // @updateURL    https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @downloadURL  https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @description  try to take over the world!
@@ -26,7 +26,7 @@ ocrs.naver = async function(imgUrlOrB64) {
     reqImage.url= imgUrlOrB64;
   }
   else {
-    reqImage.format = 'png',
+    reqImage.format = 'png';
     reqImage.data = imgUrlOrB64;
   };
 
