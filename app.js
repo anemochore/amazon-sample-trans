@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         amazon sample trans
 // @namespace    http://tampermonkey.net/
-// @version      0.1.1
+// @version      0.1.2
 // @updateURL    https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @downloadURL  https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @description  try to take over the world!
@@ -135,12 +135,10 @@ translates.deepl = async (text, target = navigator.language.slice(0, 2)) => {
     data = res.response;
     translation = data?.translations.pop().text.replaceAll(/<br\/>/g, '\n');
     console.log('translation:', translation);
-  /*
   }
   catch(e) {
     console.log('deepl trans failed', e);
   }
-  */
 
   return translation;
 };
