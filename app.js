@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         amazon sample trans
 // @namespace    http://tampermonkey.net/
-// @version      0.1.6
+// @version      0.1.7
 // @updateURL    https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @downloadURL  https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @description  try to take over the world!
@@ -153,7 +153,8 @@ if(!ocrFunc || !transFunc) {
   return;
 }
 
-let observer, imgsLength;
+
+let observer, prevImgsLength;
 observer = new MutationObserver(onLoad);
 await onLoad();  //force first run
 
@@ -211,7 +212,6 @@ async function init() {
   //entry
   root = await elementReady_('div#kr-renderer');
   SINGLE_PAGE_FLAG = (await elementReady_('div.litb-reading-area', document, {resolveWhenClassChanges: true})).classList.contains('paginated');
-  console.log('root, SINGLE_PAGE_FLAG', root, SINGLE_PAGE_FLAG);
 
   if(SINGLE_PAGE_FLAG) {
     texts = {}, translations = {};
@@ -224,33 +224,34 @@ async function init() {
 async function onLoad() {
   observer.disconnect();
 
-  let keys = [], imgUrlOrB64s = {};
+  let keys, imgUrlOrB64s = {};  //keys is an array
   if(!SINGLE_PAGE_FLAG) {
-    await elementReady_('div[data-page]', document, {checkIfAllChildrenAreAdded: true});
-    const imgs = await elementReady_('div[data-page]>img', document, {returnAll: true, checkIfAllChildrenAreAdded: true});
-    console.log('prev imgs length, imgs length', imgsLength, imgs.length);
+    //div 먼저 순차적으로 DOM에 추가되고, 그 안의 img들은 더 나중에 로드된다.
+    await elementReady_('div[data-page]', document, {returnAll: true, checkIfAllChildrenAreAdded: true});
+    const imgs = await elementReady_('div[data-page]>img', document, {returnAll: true});
+    console.log('prev imgs length, imgs length', prevImgsLength, imgs.length);
 
-    if(!imgsLength || imgs.length > imgsLength) {
+    if(!prevImgsLength || imgs.length > prevImgsLength) {
       keys = imgs.map(el => el.parentElement.getAttribute('data-page'));
-      keys.forEach((key, i) => {
-        if(texts[key]) keys[i] = null;
-        else imgUrlOrB64s[key] = imgs[i].src;
-      });
-      imgsLength = imgs.length;
+      for(const [i, key] of keys.entries()) {
+        imgUrlOrB64s[key] = imgs[i].src;
+      }
+      prevImgsLength = imgs.length;
     }
   }
   else {
     root = await elementReady_('div#kr-renderer');  //need to refresh root when single page
-    let img = await elementReady_('img', root, {checkIfAllChildrenAreAdded: true});
+    let img = await elementReady_('img', root);
     let key = img.src.split('/').pop();
 
-    keys[0] = key;
+    keys = [key];
     imgUrlOrB64s[key] = convertImageToBase64(img).replace('data:image/png;base64,', '');
 
     output.value = '실행 중...';
   }
 
   for(const key of keys) {
+    //console.debug('current key, value, !texts[key]:', key.slice(0,99), imgUrlOrB64s[key], !texts[key]);
     if(!texts[key]) {
       texts[key] = (await ocrFunc(imgUrlOrB64s[key]) || ' ')
       .replaceAll(/Copyrighted Material/g, '')
@@ -328,9 +329,10 @@ function sleep(ms) {
 function elementReady_(selector, baseEl = document.documentElement, options = {}) {
   return new Promise((resolve, reject) => {
     const els = [...baseEl.querySelectorAll(selector)];
-    if(els.length > 0 && !options.waitFirst && !options.resolveWhenClassChanges) {
+    if(els.length > 0 && !options.waitFirst && !options.resolveWhenClassChanges && !options.checkIfAllChildrenAreAdded) {
       console.debug('resolved immediately', els);
-      if(options.returnAll) resolve(els); else resolve(els[els.length-1]);
+      if(options.returnAll) resolve(els);
+      else resolve(els[els.length-1]);
     }
 
     this.prevElNumber = els.length;
@@ -340,27 +342,28 @@ function elementReady_(selector, baseEl = document.documentElement, options = {}
     new MutationObserver(async (mutationRecords, observer) => {
       const els = [...baseEl.querySelectorAll(selector)];
 
-      if(!options.checkIfAllChildrenAreAdded && !options.resolveWhenClassChanges && els.length > 0) {
-        console.debug('resolved for checkIfAllChildrenAreAdded false & resolveWhenClassChanges false', els);
-        observer.disconnect();
-        if(options.returnAll) resolve(els); else resolve(els[els.length-1]);
-      }
-
       if(els.length > 0) {
-        if(options.resolveWhenClassChanges && els[0].className != this.prevClassName) {
-          console.debug('resolved for resolveWhenClassChanges true', els[0]);
+        if(!options.checkIfAllChildrenAreAdded && !options.resolveWhenClassChanges) {
+          console.debug('resolved for checkIfAllChildrenAreAdded false & resolveWhenClassChanges false', els);
           observer.disconnect();
-          if(options.returnAll) resolve(els); else resolve(els[els.length-1]);
+          if(options.returnAll) resolve(els);
+          else resolve(els[els.length-1]);
         }
-
-        if(options.checkIfAllChildrenAreAdded && els.length > this.prevElNumber) {
+        else if(options.checkIfAllChildrenAreAdded && els.length > this.prevElNumber) {
           this.prevElNumber = els.length;
           await sleep(1000);  //dirty hack
           if([...baseEl.querySelectorAll(selector)].length == this.prevElNumber) {
             console.debug('resolved for checkIfAllChildrenAreAdded true & resolveWhenClassChanges false', els);
             observer.disconnect();
-            if(options.returnAll) resolve(els); else resolve(els[els.length-1]);
+            if(options.returnAll) resolve(els);
+            else resolve(els[els.length-1]);
           }
+        }
+        else if(options.resolveWhenClassChanges && els[0].className != this.prevClassName) {
+          console.debug('resolved for resolveWhenClassChanges true', els[0]);
+          observer.disconnect();
+          if(options.returnAll) resolve(els);
+          else resolve(els[els.length-1]);
         }
       }
     })
