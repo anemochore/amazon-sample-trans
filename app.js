@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         amazon sample trans
 // @namespace    http://tampermonkey.net/
-// @version      0.1.7
+// @version      0.1.8
 // @updateURL    https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @downloadURL  https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @description  try to take over the world!
@@ -349,7 +349,7 @@ function elementReady_(selector, baseEl = document.documentElement, options = {}
           if(options.returnAll) resolve(els);
           else resolve(els[els.length-1]);
         }
-        else if(options.checkIfAllChildrenAreAdded && els.length > this.prevElNumber) {
+        else if(options.checkIfAllChildrenAreAdded && els.length >= this.prevElNumber) {
           this.prevElNumber = els.length;
           await sleep(1000);  //dirty hack
           if([...baseEl.querySelectorAll(selector)].length == this.prevElNumber) {
