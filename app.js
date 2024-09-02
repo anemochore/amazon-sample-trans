@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         amazon sample trans
 // @namespace    http://tampermonkey.net/
-// @version      0.1.8
+// @version      0.2.0
 // @updateURL    https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @downloadURL  https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @description  try to take over the world!
@@ -31,8 +31,8 @@ ocrs.naver = async imgUrlOrB64 => {
   };
 
   const timeStamp = Date.now();
-  let res, data, text;
-  try {
+  let res, data, lines;
+  //try {
     res = await fetchCors(ocrUrl, {
     //res = await fetch(ocrUrl, {
       method: 'POST',
@@ -52,23 +52,67 @@ ocrs.naver = async imgUrlOrB64 => {
     //data = await res.json();
     data = res.response;
     if(data.images[0]?.inferResult == 'SUCCESS') {
-      const imageFields = data.images[0].fields;
-      const inferTexts = imageFields.map(el => el.inferText),
-            lineBreaks = imageFields.map(el => el.lineBreak ? '\n' : ' ');
-      text = zip(inferTexts, lineBreaks).map(el => el.join('')).join('');
+      //console.log('data', data);
+      const fields = data.images[0].fields;
+
+      //get lines
+      lines = [];
+      let lineBuffer = makeLine(fields[0]);
+      if(fields[0]?.lineBreak) {
+        lines.push(lineBuffer);
+        lineBuffer = {};
+      }
+      for(let i = 1; i < fields.length; i++) {  //starts from 1
+        const field = fields[i];
+        const line = makeLine(field);
+
+        if(field?.lineBreak) {
+          lines.push(mergeLines(lineBuffer, line));
+          lineBuffer = {};
+        }
+        else {
+          lineBuffer = mergeLines(lineBuffer, line);
+        }
+      }
+      if(lineBuffer.x1) lines.push(lineBuffer);
     }
-    console.log('text:', text);
+  /*
   }
   catch(e) {
     console.log('naver ocr failed', e);
   }
+  */
 
-  return text;
+  console.log('lines:', lines);
+  return lines;
 
-  function zip(...rows) {
-    //https://stackoverflow.com/a/10284006/6153990
-    return [...rows[0]].map((_,c) => rows.map(row => row[c]));
+
+  function mergeLines(line1, line2) {
+    if(!line1.x1) return line2;
+    if(!line2.x1) return line1;
+
+    const line = {};
+    [line.x1, line.y1] = [line1.x1, line1.y1];
+    [line.x2, line.y2] = [line2.x2, line2.y2];
+    line.text = line1.text + ' ' + line2.text;  //maybe one space is not enough. but forget it for now.
+    line.fontSize = Math.min((line1.fontSize, line2.fontSize));  //approx~
+    return line;
   }
+
+  function makeLine(field) {
+    const line = {};
+    if(field?.boundingPoly) {
+      [line.x1, line.y1] = [field.boundingPoly.vertices[0].x, field.boundingPoly.vertices[0].y];
+      [line.x2, line.y2] = [field.boundingPoly.vertices[2].x, field.boundingPoly.vertices[2].y];
+      line.text = field.inferText;
+
+      //get approx. font size
+      line.fontSize = (line.x2 - line.x1) / line.text.length * 0.9;
+    }
+
+    return line;
+  }
+
 };
 ocrs.google = async imgUrlOrB64 => {
   //구글 ocr(월 이미지 1000개 무료)
@@ -142,38 +186,52 @@ transFuncs.deepl = async (text, target = navigator.language.slice(0, 2)) => {
 };
 
 
-const output = document.createElement('textarea');
-let root, SINGLE_PAGE_FLAG, texts, translations;
+const buttonAndStatus = document.createElement('button');
+let root, SINGLE_PAGE_FLAG, texts, translations, imgs = {};
 
 let ocrKey, ocrFunc, ocrUrl, transKey, transFunc;
 await init();
 if(!ocrFunc || !transFunc) {
   GM_setValue('사용법', '깃허브 저장소의 리드미를 참고해서 탬퍼멍키 저장소에 본인 크리덴셜을 써둡시다.');
-  output.value = '깃허브 저장소의 리드미를 참고해서 탬퍼멍키 저장소에 본인 크리덴셜을 써둡시다.';
+  buttonAndStatus.innerText = '깃허브 저장소의 리드미를 참고해서 탬퍼멍키 저장소에 본인 크리덴셜을 써둡시다.';
   return;
 }
 
 
-let observer, prevImgsLength;
+let observer, prevImgsLength;  //, prevKey;
 observer = new MutationObserver(onLoad);
 await onLoad();  //force first run
 
 
 async function init() {
-  //output
-  output.spellcheck = false;
-  output.style.top = '12%';
-  output.style.left = '65.75%';
-  output.style.width = '674px';
-  output.style.height = '85.5%';
-  output.style.position = 'absolute';
-  output.style.fontSize = '1.8em';
-  output.style.lineHeight = '1.5em';
-  output.style.backgroundColor = 'lightgray';
-  output.style.overflow = 'scroll';
-  output.style.zIndex = '9999';
-  document.body.append(output);
-  output.value = '실행 중...';
+  //buttonAndStatus
+  buttonAndStatus.style.top = '1.5%';
+  buttonAndStatus.style.left = '65.75%';
+  buttonAndStatus.style.position = 'absolute';
+  buttonAndStatus.style.zIndex = '9999';
+  buttonAndStatus.style.fontSize = '2rem';
+  buttonAndStatus.style.backgroundColor = 'lawngreen';
+  document.body.append(buttonAndStatus);
+  buttonAndStatus.innerText = '실행 중...';
+  buttonAndStatus.disabled = true;
+  buttonAndStatus.onclick = e => {
+    observer.disconnect();
+    console.log('e', e);
+    let button = e.target, show = 'block';
+    if(button.innerText == 'hide') {
+      show = 'none';
+      button.innerText = 'show';
+    }
+    else {
+      show = 'block';
+      button.innerText = 'hide';
+    }
+    [...document.querySelectorAll('.fy-text')].forEach(el => {
+      console.log('el', el);
+      el.style.display = show;
+    });
+    observer.observe(document, {childList: true, subtree: true});
+  };
 
   //ocr: google, naver 순서
   ocrKey = GM_getValue('GOOGLE_OCR_API_KEY');
@@ -186,13 +244,13 @@ async function init() {
       ocrFunc = ocrs.naver;
       ocrUrl = GM_getValue('NAVER_OCR_URL');
       if(!ocrUrl) {
-        output.value = '탬퍼멍키 저장소에 네이버 OCR 게이트웨이 URL(NAVER_OCR_URL)도 써야 합니다.';
+        buttonAndStatus.innerText = '탬퍼멍키 저장소에 네이버 OCR 게이트웨이 URL(NAVER_OCR_URL)도 써야 합니다.';
         ocrFunc = null;
         return;
       }
     }
     else {
-      output.value = '탬퍼멍키 저장소에 본인 구글 OCR API 키(GOOGLE_OCR_API_KEY)를 쓰든가 네이버 OCR 시크릿 & OCR 게이트웨이 URL(NAVER_OCR_URL)을 써야 합니다.';
+      buttonAndStatus.innerText = '탬퍼멍키 저장소에 본인 구글 OCR API 키(GOOGLE_OCR_API_KEY)를 쓰든가 네이버 OCR 시크릿 & OCR 게이트웨이 URL(NAVER_OCR_URL)을 써야 합니다.';
       return;
     }
   }
@@ -204,7 +262,7 @@ async function init() {
     transKey = GM_getValue('DEEPL_API_KEY');
     if(transKey) transFunc = transFuncs.deepl;
     else {
-      output.value = '탬퍼멍키 저장소에 본인 구글 번역 API 키(GOOGLE_TRANS_API_KEY)를 쓰든가 딥엘 API 키(DEEPL_API_KEY)를 써야 합니다.';
+      buttonAndStatus.innerText = '탬퍼멍키 저장소에 본인 구글 번역 API 키(GOOGLE_TRANS_API_KEY)를 쓰든가 딥엘 API 키(DEEPL_API_KEY)를 써야 합니다.';
       return;
     }
   }
@@ -223,61 +281,103 @@ async function init() {
 
 async function onLoad() {
   observer.disconnect();
+  buttonAndStatus.disabled = true;
 
-  let keys, imgUrlOrB64s = {};  //keys is an array
+  let keys;
   if(!SINGLE_PAGE_FLAG) {
     //div 먼저 순차적으로 DOM에 추가되고, 그 안의 img들은 더 나중에 로드된다.
     await elementReady_('div[data-page]', document, {returnAll: true, checkIfAllChildrenAreAdded: true});
-    const imgs = await elementReady_('div[data-page]>img', document, {returnAll: true});
-    console.log('prev imgs length, imgs length', prevImgsLength, imgs.length);
+    const curImgs = await elementReady_('div[data-page]>img', document, {returnAll: true});
+    console.log('prev imgs length, imgs length', prevImgsLength, curImgs.length);
 
-    if(!prevImgsLength || imgs.length > prevImgsLength) {
-      keys = imgs.map(el => el.parentElement.getAttribute('data-page'));
+    if(!prevImgsLength || curImgs.length > prevImgsLength) {
+      keys = curImgs.map(el => el.parentElement.getAttribute('data-page'));
       for(const [i, key] of keys.entries()) {
-        imgUrlOrB64s[key] = imgs[i].src;
+        if(!imgs[key]) {
+          const img = curImgs[i];
+          imgs[key] = {};
+          imgs[key].imgUrlOrB64 = img.src;
+          imgs[key].imgRoot = img.parentNode;
+          imgs[key].ratio = img.width / img.naturalWidth;
+        }
       }
-      prevImgsLength = imgs.length;
+      prevImgsLength = curImgs.length;
     }
   }
   else {
     root = await elementReady_('div#kr-renderer');  //need to refresh root when single page
-    let img = await elementReady_('img', root);
+    let img = await elementReady_('img', root, {waitFirst: true, checkIfAllChildrenAreAdded: true});
     let key = img.src.split('/').pop();
 
     keys = [key];
-    imgUrlOrB64s[key] = convertImageToBase64(img).replace('data:image/png;base64,', '');
+    if(!imgs[key]) {
+      imgs[key] = {};
+      imgs[key].imgUrlOrB64 = img.src;
+      if(img.src.startsWith('blob')) imgs[key].imgUrlOrB64 = convertImageToBase64(img).replace('data:image/png;base64,', '');
+      imgs[key].imgRoot = img.parentNode;
+      imgs[key].ratio = img.width / img.naturalWidth;
+      //prevKey = key;
+    }
 
-    output.value = '실행 중...';
+    buttonAndStatus.innerText = '실행 중...';
   }
 
   for(const key of keys) {
-    //console.debug('current key, value, !texts[key]:', key.slice(0,99), imgUrlOrB64s[key], !texts[key]);
+    //console.debug('current key, value, !texts[key]:', key.slice(0,99), imgs[key].imgUrlOrB64, !texts[key]);
+    let lines;
     if(!texts[key]) {
-      texts[key] = (await ocrFunc(imgUrlOrB64s[key]) || ' ')
-      .replaceAll(/Copyrighted Material/g, '')
-      .replaceAll(/\n/gm, '<br/>');
-    }
-    else if(SINGLE_PAGE_FLAG) {
-      output.value = texts[key] || ' ';
-      output.style.backgroundColor = 'darkgreen';
+      lines = await ocrFunc(imgs[key].imgUrlOrB64);
+      addLines(imgs[key], lines);
+      texts[key] = (lines || []).filter(el => el.text != 'Copyrighted Material').map(el => el.text).join('<br/>');
     }
 
     if(texts[key] && !translations[key]) {
       translations[key] = decodeHtml((await transFunc(texts[key]) || '').replaceAll(/<br\/>/g, '\n'));
+      //translations[key] = texts[key];
     }
 
-    if(!SINGLE_PAGE_FLAG) {
-      output.value = translations.filter(el => el).join('\n----\n');
-    }
-    else {
-      output.value = translations[key] || output.value;
-      output.style.backgroundColor = 'lightgray';
-    }
+    if(translations[key]) updateLines(imgs[key], translations[key].split('\n'));
+    //if(translations[key]) updateLines(imgs[key], translations[key].split('<br/>'));
 
     console.log(`page ${key} processed. translation length: ${translations[key]?.length}`);
   }
 
+  buttonAndStatus.disabled = false;
+  buttonAndStatus.innerText = 'hide';
   observer.observe(document, {childList: true, subtree: true});
+}
+
+function addLines(img, lines) {
+  img.linesEl = [];
+  for(const line of lines) {
+    const txt = document.createElement("textarea");
+    txt.className = 'fy-text';
+
+    //todo: let's do this by css
+    txt.spellcheck = false;
+    txt.style.padding = '0';
+    txt.style.border = '0';
+    txt.style.position = 'absolute';
+    txt.style.resize = 'none';
+    txt.style.overflow = 'hidden';
+    txt.style.opacity = '0.9';
+    
+    txt.value = line.text;
+    txt.style.top = (line.y1 * img.ratio) + 'px';
+    txt.style.left = (line.x1 * img.ratio) + 'px';
+    txt.style.width = ((line.x2 - line.x1) * img.ratio) + 'px';
+    txt.style.height = Math.max(((line.y2 - line.y1) * img.ratio), 18) + 'px';
+    txt.style.fontSize = Math.max((line.fontSize * 0.9 * img.ratio), 11) + 'px';
+
+    img.imgRoot.appendChild(txt);
+    img.linesEl.push(txt);
+  }
+}
+
+function updateLines(img, translationLines) {
+  for(const [i, txt] of img.linesEl.entries()) {
+    if(translationLines[i]) txt.value = translationLines[i];
+  }
 }
 
 function convertImageToBase64(image) {
