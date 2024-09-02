@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         amazon sample trans
 // @namespace    http://tampermonkey.net/
-// @version      0.2.0
+// @version      0.2.1
 // @updateURL    https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @downloadURL  https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @description  try to take over the world!
@@ -227,7 +227,6 @@ async function init() {
       button.innerText = 'hide';
     }
     [...document.querySelectorAll('.fy-text')].forEach(el => {
-      console.log('el', el);
       el.style.display = show;
     });
     observer.observe(document, {childList: true, subtree: true});
