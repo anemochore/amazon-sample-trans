@@ -18,3 +18,6 @@ amazon sample auto ocr &amp; trans (via google, etc api) tampermonkey script
     3. 번역을 [구글](https://cloud.google.com/translate/docs)로 사용하려면 `"GOOGLE_TRANS_API_KEY"`에 본인 API 키를 적는다(OCR과 동일한 프로젝트라면 API 키도 같다).
     4. 번역을 [딥엘](https://developers.deepl.com/docs)로 사용하려면 `"DEEPL_API_KEY"`에 본인 API 키를 적는다(무료 사용자용으로 하드코딩).
 4. 다시 아마존 페이지에 접속해 새로고침하고 미리보기를 눌러보면 옆에 번역이 뜸.
+
+## todo
+1. v0.2부터 이미지 자체에 번역문을 출력되게 했는데, 네이버 API 기준으로만 작업했다. 즉 구글 OCR은 사용 불가 상태.
