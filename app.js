@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         amazon sample trans
 // @namespace    http://tampermonkey.net/
-// @version      0.2.1
+// @version      0.3.0
 // @updateURL    https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @downloadURL  https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @description  try to take over the world!
@@ -15,6 +15,23 @@
 // @connect      googleapis.com
 // @connect      deepl.com
 // ==/UserScript==
+
+//set css
+const style = document.createElement('style');
+style.type = 'text/css';
+document.head.appendChild(style);
+
+const css = `.fy-text {
+  padding: 0;
+  border: 0;
+  position: absolute;
+  resize: none;
+  overflow:hidden;
+  opacity: 0.9;
+  line-height: 220%;
+}`;
+style.appendChild(document.createTextNode(css));
+
 
 const ocrs = {}, transFuncs = {};
 ocrs.naver = async imgUrlOrB64 => {
@@ -32,74 +49,104 @@ ocrs.naver = async imgUrlOrB64 => {
 
   const timeStamp = Date.now();
   let res, data, lines;
-  //try {
-    res = await fetchCors(ocrUrl, {
-    //res = await fetch(ocrUrl, {
-      method: 'POST',
-      headers: {
-        'X-OCR-SECRET': ocrKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        version: 'V2',
-        requestId: 'id_' + timeStamp,
-        timestamp: timeStamp,
-        lang: 'ja',  //english is supported by default
-        images: [reqImage],
-        //enableTableDetection: true,
-      }),
-    });
-    //data = await res.json();
-    data = res.response;
-    if(data.images[0]?.inferResult == 'SUCCESS') {
-      //console.log('data', data);
-      const fields = data.images[0].fields;
+  res = await fetchCors(ocrUrl, {
+  //res = await fetch(ocrUrl, {
+    method: 'POST',
+    headers: {
+      'X-OCR-SECRET': ocrKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      version: 'V2',
+      requestId: 'id_' + timeStamp,
+      timestamp: timeStamp,
+      lang: 'ja',  //english is supported by default
+      images: [reqImage],
+      //enableTableDetection: true,
+    }),
+  });
+  //data = await res.json();
+  data = res.response;
+  if(data.images[0]?.inferResult == 'SUCCESS') {
+    //console.log('data', data);
+    const fields = data.images[0].fields;
 
-      //get lines
-      lines = [];
-      let lineBuffer = makeLine(fields[0]);
-      if(fields[0]?.lineBreak) {
-        lines.push(lineBuffer);
-        lineBuffer = {};
-      }
-      for(let i = 1; i < fields.length; i++) {  //starts from 1
-        const field = fields[i];
-        const line = makeLine(field);
-
-        if(field?.lineBreak) {
-          lines.push(mergeLines(lineBuffer, line));
-          lineBuffer = {};
-        }
-        else {
-          lineBuffer = mergeLines(lineBuffer, line);
-        }
-      }
-      if(lineBuffer.x1) lines.push(lineBuffer);
+    //get lines
+    lines = [];
+    let wordBuffer = makeWord(fields[0]);
+    if(fields[0]?.lineBreak) {
+      lines.push(wordBuffer);
+      wordBuffer = {};
     }
-  /*
+    for(let i = 1; i < fields.length; i++) {  //starts from 1
+      const field = fields[i];
+      const word = makeWord(field);
+
+      if(field?.lineBreak) {
+        lines.push(mergeWords(wordBuffer, word));
+        wordBuffer = {};
+      }
+      else {
+        wordBuffer = mergeWords(wordBuffer, word);
+      }
+    }
+    if(wordBuffer.x1) lines.push(wordBuffer);
   }
-  catch(e) {
-    console.log('naver ocr failed', e);
-  }
-  */
 
   console.log('lines:', lines);
+  lines = mergeLines(lines);
+  console.log('merged lines:', lines);
   return lines;
 
 
-  function mergeLines(line1, line2) {
+  function mergeLines(lines) {
+    const X_THRESHOLD = 0.08;
+    const H_THRESHOLD = 0.5;
+    const LINESPACE_THRESHOLD = 9.5;
+
+    const newLines = [lines[0]];
+    let prevLine;
+    for(let i = 1; i < lines.length; i++) {  //starts from 1
+      prevLine = lines[i-1];
+      const line = lines[i];
+      const xDeltaRatio = prevLine.x1/line.x1>1 ? prevLine.x1/line.x1-1 : 1-prevLine.x1/line.x1;
+      const hDeltaRatio = (prevLine.y2-prevLine.y1)/(line.y2-line.y1)>1 ? (prevLine.y2-prevLine.y1)/(line.y2-line.y1)-1 : 1-(prevLine.y2-prevLine.y1)/(line.y2-line.y1);
+      const lDeltaRatio = (line.y1-prevLine.y2) / ((prevLine.fontSize+line.fontSize)/2);
+      if(xDeltaRatio < X_THRESHOLD && hDeltaRatio < H_THRESHOLD && lDeltaRatio < LINESPACE_THRESHOLD) {
+        const prevNewLine = newLines.pop();
+        newLines.push(mergeWords(prevNewLine, line, true));
+      }
+      else {
+        /*
+        console.log('not qualified', prevLine, line);
+        console.log('h deltaRatio', (prevLine.y2-prevLine.y1), (line.y2-line.y1), hDeltaRatio);
+        console.log('l deltaRatio', (line.y1-prevLine.y2), ((prevLine.fontSize+line.fontSize)/2), lDeltaRatio);
+        */
+        newLines.push(line);
+      }
+    }
+
+    return newLines;
+  }
+
+  function mergeWords(line1, line2, keepLarge = false) {
     if(!line1.x1) return line2;
     if(!line2.x1) return line1;
 
     const line = {};
-    [line.x1, line.y1] = [line1.x1, line1.y1];
-    [line.x2, line.y2] = [line2.x2, line2.y2];
+    let newX1 = line1.x1, newY1 = line1.y1, newX2 = line2.x2, newY2 = line2.y2;
+    if(keepLarge) {
+      [newX1, newY1] = [Math.min(line1.x1, line2.x1), Math.min(line1.y1, line2.y1)];
+      [newX2, newY2] = [Math.max(line1.x2, line2.x2), Math.max(line1.y2, line2.y2)];
+    }
+    [line.x1, line.y1] = [newX1, newY1];
+    [line.x2, line.y2] = [newX2, newY2];
     line.text = line1.text + ' ' + line2.text;  //maybe one space is not enough. but forget it for now.
-    line.fontSize = Math.min((line1.fontSize, line2.fontSize));  //approx~
+    line.fontSize = (line1.fontSize + line2.fontSize) / 2;  //approx~
     return line;
   }
 
-  function makeLine(field) {
+  function makeWord(field) {
     const line = {};
     if(field?.boundingPoly) {
       [line.x1, line.y1] = [field.boundingPoly.vertices[0].x, field.boundingPoly.vertices[0].y];
@@ -107,13 +154,13 @@ ocrs.naver = async imgUrlOrB64 => {
       line.text = field.inferText;
 
       //get approx. font size
-      line.fontSize = (line.x2 - line.x1) / line.text.length * 0.9;
+      line.fontSize = (line.x2 - line.x1) / line.text.length * 0.95;
     }
 
     return line;
   }
-
 };
+/*
 ocrs.google = async imgUrlOrB64 => {
   //구글 ocr(월 이미지 1000개 무료)
 
@@ -142,18 +189,19 @@ ocrs.google = async imgUrlOrB64 => {
 
   return text;
 };
+*/
 transFuncs.google = async (text, target = navigator.language.slice(0, 2)) => {
   //구글 번역(월 50만 자 무료)
 
   let res, data, translation;
-  try {
-    res = await fetch(`https://translation.googleapis.com/language/translate/v2?key=${ocrKey}&q=${encodeURIComponent(text)}&target=${target}`);
-    data = await res.json();
-    translation = data.data?.translations.pop().translatedText;
-    console.log('translation:', translation.replaceAll(/<br\/>/g, '\n'));
+  res = await fetch(`https://translation.googleapis.com/language/translate/v2?key=${transKey}&q=${encodeURIComponent(text)}&target=${target}`);
+  data = await res.json();
+  translation = data.data?.translations.pop().translatedText;
+  if(translation) {
+    console.log('translation:', translation.split('<br/>').length, translation.replaceAll(/<br\/>/g, '\n'));
   }
-  catch(e) {
-    console.log('google trans failed', e);
+  else {
+    console.log('trans failed', data);
   }
 
   return translation;
@@ -162,24 +210,25 @@ transFuncs.deepl = async (text, target = navigator.language.slice(0, 2)) => {
   //딥엘 무료 번역(월 50만 자 무료)
 
   let res, data, translation;
-  try {
-    res = await fetchCors(`https://api-free.deepl.com/v2/translate`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `DeepL-Auth-Key ${transKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        text: [text],
-        target_lang: target,
-      }),
-    });
-    data = res.response;
-    translation = data?.translations.pop().text;
-    console.log('translation:', translation.replaceAll(/<br\/>/g, '\n'));
+  res = await fetchCors(`https://api-free.deepl.com/v2/translate`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `DeepL-Auth-Key ${transKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      text: [text],
+      target_lang: target,
+    }),
+  });
+  data = res.response;
+  
+  translation = data?.translations?.pop().text;
+  if(translation) {
+    console.log('translation:', translation.split('<br/>').length, translation.replaceAll(/<br\/>/g, '\n'));
   }
-  catch(e) {
-    console.log('deepl trans failed', e);
+  else {
+    console.log('trans failed', data);
   }
 
   return translation;
@@ -327,17 +376,16 @@ async function onLoad() {
     if(!texts[key]) {
       lines = await ocrFunc(imgs[key].imgUrlOrB64);
       addLines(imgs[key], lines);
-      texts[key] = (lines || []).filter(el => el.text != 'Copyrighted Material').map(el => el.text).join('<br/>');
+      texts[key] = (lines || []).map(el => el.text).join('<br/>');
     }
 
     if(texts[key] && !translations[key]) {
+      //dev+++
+      //translations[key] = decodeHtml(texts[key] || '').replaceAll(/<br\/>/g, '\n');
       translations[key] = decodeHtml((await transFunc(texts[key]) || '').replaceAll(/<br\/>/g, '\n'));
-      //translations[key] = texts[key];
     }
 
     if(translations[key]) updateLines(imgs[key], translations[key].split('\n'));
-    //if(translations[key]) updateLines(imgs[key], translations[key].split('<br/>'));
-
     console.log(`page ${key} processed. translation length: ${translations[key]?.length}`);
   }
 
@@ -351,22 +399,14 @@ function addLines(img, lines) {
   for(const line of lines) {
     const txt = document.createElement("textarea");
     txt.className = 'fy-text';
-
-    //todo: let's do this by css
     txt.spellcheck = false;
-    txt.style.padding = '0';
-    txt.style.border = '0';
-    txt.style.position = 'absolute';
-    txt.style.resize = 'none';
-    txt.style.overflow = 'hidden';
-    txt.style.opacity = '0.9';
-    
     txt.value = line.text;
+
     txt.style.top = (line.y1 * img.ratio) + 'px';
     txt.style.left = (line.x1 * img.ratio) + 'px';
     txt.style.width = ((line.x2 - line.x1) * img.ratio) + 'px';
     txt.style.height = Math.max(((line.y2 - line.y1) * img.ratio), 18) + 'px';
-    txt.style.fontSize = Math.max((line.fontSize * 0.9 * img.ratio), 11) + 'px';
+    txt.style.fontSize = Math.max((line.fontSize * img.ratio), 11) + 'px';
 
     img.imgRoot.appendChild(txt);
     img.linesEl.push(txt);
@@ -429,21 +469,21 @@ function elementReady_(selector, baseEl = document.documentElement, options = {}
   return new Promise((resolve, reject) => {
     const els = [...baseEl.querySelectorAll(selector)];
     if(els.length > 0 && !options.waitFirst && !options.resolveWhenClassChanges && !options.checkIfAllChildrenAreAdded) {
-      console.debug('resolved immediately', els);
+      //console.debug('resolved immediately', els);
       if(options.returnAll) resolve(els);
       else resolve(els[els.length-1]);
     }
 
     this.prevElNumber = els.length;
     this.prevClassName = els[0]?.className;
-    console.debug(`for '${selector}' class and length: '${this.prevClassName}', ${this.prevElNumber}`);
+    //console.debug(`for '${selector}' class and length: '${this.prevClassName}', ${this.prevElNumber}`);
 
     new MutationObserver(async (mutationRecords, observer) => {
       const els = [...baseEl.querySelectorAll(selector)];
 
       if(els.length > 0) {
         if(!options.checkIfAllChildrenAreAdded && !options.resolveWhenClassChanges) {
-          console.debug('resolved for checkIfAllChildrenAreAdded false & resolveWhenClassChanges false', els);
+          //console.debug('resolved for checkIfAllChildrenAreAdded false & resolveWhenClassChanges false', els);
           observer.disconnect();
           if(options.returnAll) resolve(els);
           else resolve(els[els.length-1]);
@@ -452,14 +492,14 @@ function elementReady_(selector, baseEl = document.documentElement, options = {}
           this.prevElNumber = els.length;
           await sleep(1000);  //dirty hack
           if([...baseEl.querySelectorAll(selector)].length == this.prevElNumber) {
-            console.debug('resolved for checkIfAllChildrenAreAdded true & resolveWhenClassChanges false', els);
+            //console.debug('resolved for checkIfAllChildrenAreAdded true & resolveWhenClassChanges false', els);
             observer.disconnect();
             if(options.returnAll) resolve(els);
             else resolve(els[els.length-1]);
           }
         }
         else if(options.resolveWhenClassChanges && els[0].className != this.prevClassName) {
-          console.debug('resolved for resolveWhenClassChanges true', els[0]);
+          //console.debug('resolved for resolveWhenClassChanges true', els[0]);
           observer.disconnect();
           if(options.returnAll) resolve(els);
           else resolve(els[els.length-1]);
