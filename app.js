@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         amazon sample trans
 // @namespace    http://tampermonkey.net/
-// @version      0.3.0
+// @version      0.3.1
 // @updateURL    https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @downloadURL  https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @description  try to take over the world!
@@ -21,15 +21,23 @@ const style = document.createElement('style');
 style.type = 'text/css';
 document.head.appendChild(style);
 
-const css = `.fy-text {
+const css = `
+div.fy-text {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+
   padding: 0;
   border: 0;
   position: absolute;
-  resize: none;
-  overflow:hidden;
   opacity: 0.9;
   line-height: 220%;
+  background-color: white;
 }`;
+/*
+  resize: none;
+  overflow:hidden;
+*/
 style.appendChild(document.createTextNode(css));
 
 
@@ -154,7 +162,7 @@ ocrs.naver = async imgUrlOrB64 => {
       line.text = field.inferText;
 
       //get approx. font size
-      line.fontSize = (line.x2 - line.x1) / line.text.length * 0.95;
+      line.fontSize = (line.x2 - line.x1) / line.text.length * 0.81;
     }
 
     return line;
@@ -266,13 +274,13 @@ async function init() {
   buttonAndStatus.onclick = e => {
     observer.disconnect();
     console.log('e', e);
-    let button = e.target, show = 'block';
+    let button = e.target, show = 'flex';
     if(button.innerText == 'hide') {
       show = 'none';
       button.innerText = 'show';
     }
     else {
-      show = 'block';
+      show = 'flex';
       button.innerText = 'hide';
     }
     [...document.querySelectorAll('.fy-text')].forEach(el => {
@@ -397,10 +405,12 @@ async function onLoad() {
 function addLines(img, lines) {
   img.linesEl = [];
   for(const line of lines) {
-    const txt = document.createElement("textarea");
+    const txt = document.createElement("div");
     txt.className = 'fy-text';
-    txt.spellcheck = false;
-    txt.value = line.text;
+    txt.contentEditable="true";
+    //txt.spellcheck = false;
+    //txt.value = line.text;
+    txt.textContent = line.text;
 
     txt.style.top = (line.y1 * img.ratio) + 'px';
     txt.style.left = (line.x1 * img.ratio) + 'px';
@@ -415,7 +425,7 @@ function addLines(img, lines) {
 
 function updateLines(img, translationLines) {
   for(const [i, txt] of img.linesEl.entries()) {
-    if(translationLines[i]) txt.value = translationLines[i];
+    if(translationLines[i]) txt.textContent = translationLines[i];  //txt.value = translationLines[i];
   }
 }
 
