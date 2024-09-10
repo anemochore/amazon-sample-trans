@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         amazon sample trans
 // @namespace    http://tampermonkey.net/
-// @version      0.3.1
+// @version      0.3.2
 // @updateURL    https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @downloadURL  https://raw.githubusercontent.com/anemochore/amazon-sample-trans/main/app.js
 // @description  try to take over the world!
@@ -18,7 +18,6 @@
 
 //set css
 const style = document.createElement('style');
-style.type = 'text/css';
 document.head.appendChild(style);
 
 const css = `
@@ -31,7 +30,7 @@ div.fy-text {
   border: 0;
   position: absolute;
   opacity: 0.9;
-  line-height: 220%;
+  line-height: 180%;
   background-color: white;
 }`;
 /*
@@ -76,7 +75,7 @@ ocrs.naver = async imgUrlOrB64 => {
   //data = await res.json();
   data = res.response;
   if(data.images[0]?.inferResult == 'SUCCESS') {
-    //console.log('data', data);
+    console.log('data.images[0]', data.images[0]);
     const fields = data.images[0].fields;
 
     //get lines
@@ -105,68 +104,6 @@ ocrs.naver = async imgUrlOrB64 => {
   lines = mergeLines(lines);
   console.log('merged lines:', lines);
   return lines;
-
-
-  function mergeLines(lines) {
-    const X_THRESHOLD = 0.08;
-    const H_THRESHOLD = 0.5;
-    const LINESPACE_THRESHOLD = 9.5;
-
-    const newLines = [lines[0]];
-    let prevLine;
-    for(let i = 1; i < lines.length; i++) {  //starts from 1
-      prevLine = lines[i-1];
-      const line = lines[i];
-      const xDeltaRatio = prevLine.x1/line.x1>1 ? prevLine.x1/line.x1-1 : 1-prevLine.x1/line.x1;
-      const hDeltaRatio = (prevLine.y2-prevLine.y1)/(line.y2-line.y1)>1 ? (prevLine.y2-prevLine.y1)/(line.y2-line.y1)-1 : 1-(prevLine.y2-prevLine.y1)/(line.y2-line.y1);
-      const lDeltaRatio = (line.y1-prevLine.y2) / ((prevLine.fontSize+line.fontSize)/2);
-      if(xDeltaRatio < X_THRESHOLD && hDeltaRatio < H_THRESHOLD && lDeltaRatio < LINESPACE_THRESHOLD) {
-        const prevNewLine = newLines.pop();
-        newLines.push(mergeWords(prevNewLine, line, true));
-      }
-      else {
-        /*
-        console.log('not qualified', prevLine, line);
-        console.log('h deltaRatio', (prevLine.y2-prevLine.y1), (line.y2-line.y1), hDeltaRatio);
-        console.log('l deltaRatio', (line.y1-prevLine.y2), ((prevLine.fontSize+line.fontSize)/2), lDeltaRatio);
-        */
-        newLines.push(line);
-      }
-    }
-
-    return newLines;
-  }
-
-  function mergeWords(line1, line2, keepLarge = false) {
-    if(!line1.x1) return line2;
-    if(!line2.x1) return line1;
-
-    const line = {};
-    let newX1 = line1.x1, newY1 = line1.y1, newX2 = line2.x2, newY2 = line2.y2;
-    if(keepLarge) {
-      [newX1, newY1] = [Math.min(line1.x1, line2.x1), Math.min(line1.y1, line2.y1)];
-      [newX2, newY2] = [Math.max(line1.x2, line2.x2), Math.max(line1.y2, line2.y2)];
-    }
-    [line.x1, line.y1] = [newX1, newY1];
-    [line.x2, line.y2] = [newX2, newY2];
-    line.text = line1.text + ' ' + line2.text;  //maybe one space is not enough. but forget it for now.
-    line.fontSize = (line1.fontSize + line2.fontSize) / 2;  //approx~
-    return line;
-  }
-
-  function makeWord(field) {
-    const line = {};
-    if(field?.boundingPoly) {
-      [line.x1, line.y1] = [field.boundingPoly.vertices[0].x, field.boundingPoly.vertices[0].y];
-      [line.x2, line.y2] = [field.boundingPoly.vertices[2].x, field.boundingPoly.vertices[2].y];
-      line.text = field.inferText;
-
-      //get approx. font size
-      line.fontSize = (line.x2 - line.x1) / line.text.length * 0.81;
-    }
-
-    return line;
-  }
 };
 /*
 ocrs.google = async imgUrlOrB64 => {
@@ -177,27 +114,87 @@ ocrs.google = async imgUrlOrB64 => {
   else reqImage = {content: imgUrlOrB64};
   
   let res, data, text;
-  try {
-    res = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${ocrKey}`, {
-      method: 'POST',
-      body: JSON.stringify({
-        requests: [{
-          features: [{type: "TEXT_DETECTION"}],
-          image: reqImage,
-        }],
-      }),
-    });
-    data = await res.json();
+  res = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${ocrKey}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      requests: [{
+        features: [{type: "TEXT_DETECTION"}],
+        image: reqImage,
+      }],
+    }),
+  });
+  data = await res.json();
+  if(data.responses) {
+    console.log('data.responses:', data.responses);
     text = data.responses?.pop().fullTextAnnotation.text;
-    console.log('text:', text);
-  }
-  catch(e) {
-    console.log('google ocr failed', e);
   }
 
   return text;
 };
 */
+
+//ocr utils
+function mergeLines(lines) {
+  const X_THRESHOLD = 0.08;
+  const H_THRESHOLD = 0.5;
+  const LINESPACE_THRESHOLD = 9.5;
+
+  const newLines = [lines[0]];
+  let prevLine;
+  for(let i = 1; i < lines.length; i++) {  //starts from 1
+    prevLine = lines[i-1];
+    const line = lines[i];
+    const xDeltaRatio = prevLine.x1/line.x1>1 ? prevLine.x1/line.x1-1 : 1-prevLine.x1/line.x1;
+    const hDeltaRatio = (prevLine.y2-prevLine.y1)/(line.y2-line.y1)>1 ? (prevLine.y2-prevLine.y1)/(line.y2-line.y1)-1 : 1-(prevLine.y2-prevLine.y1)/(line.y2-line.y1);
+    const lDeltaRatio = (line.y1-prevLine.y2) / ((prevLine.fontSize+line.fontSize)/2);
+    if(xDeltaRatio < X_THRESHOLD && hDeltaRatio < H_THRESHOLD && lDeltaRatio < LINESPACE_THRESHOLD) {
+      const prevNewLine = newLines.pop();
+      newLines.push(mergeWords(prevNewLine, line, true));
+    }
+    else {
+      /*
+      console.log('not qualified', prevLine, line);
+      console.log('h deltaRatio', (prevLine.y2-prevLine.y1), (line.y2-line.y1), hDeltaRatio);
+      console.log('l deltaRatio', (line.y1-prevLine.y2), ((prevLine.fontSize+line.fontSize)/2), lDeltaRatio);
+      */
+      newLines.push(line);
+    }
+  }
+
+  return newLines;
+}
+
+function mergeWords(line1, line2, keepLarge = false) {
+  if(!line1.x1) return line2;
+  if(!line2.x1) return line1;
+
+  const line = {};
+  let newX1 = line1.x1, newY1 = line1.y1, newX2 = line2.x2, newY2 = line2.y2;
+  if(keepLarge) {
+    [newX1, newY1] = [Math.min(line1.x1, line2.x1), Math.min(line1.y1, line2.y1)];
+    [newX2, newY2] = [Math.max(line1.x2, line2.x2), Math.max(line1.y2, line2.y2)];
+  }
+  [line.x1, line.y1] = [newX1, newY1];
+  [line.x2, line.y2] = [newX2, newY2];
+  line.text = line1.text + ' ' + line2.text;  //maybe one space is not enough. but forget it for now.
+  line.fontSize = (line1.fontSize + line2.fontSize) / 2;  //approx~
+  return line;
+}
+
+function makeWord(field) {
+  const line = {};
+  if(field?.boundingPoly) {
+    [line.x1, line.y1] = [field.boundingPoly.vertices[0].x, field.boundingPoly.vertices[0].y];
+    [line.x2, line.y2] = [field.boundingPoly.vertices[2].x, field.boundingPoly.vertices[2].y];
+    line.text = field.inferText;
+
+    //get approx. font size
+    line.fontSize = (line.x2 - line.x1) / line.text.length * 0.81;
+  }
+
+  return line;
+}
+
 transFuncs.google = async (text, target = navigator.language.slice(0, 2)) => {
   //구글 번역(월 50만 자 무료)
 
@@ -273,7 +270,7 @@ async function init() {
   buttonAndStatus.disabled = true;
   buttonAndStatus.onclick = e => {
     observer.disconnect();
-    console.log('e', e);
+    //console.log('e', e);
     let button = e.target, show = 'flex';
     if(button.innerText == 'hide') {
       show = 'none';
